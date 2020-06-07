@@ -1,0 +1,115 @@
+diff --git a/append-demo/spdk_nvme_io.cpp b/append-demo/spdk_nvme_io.cpp
+index ed1024c..b18c1eb 100644
+--- a/append-demo/spdk_nvme_io.cpp
++++ b/append-demo/spdk_nvme_io.cpp
+@@ -406,6 +406,7 @@ int init(const char * dev_name) {
+     spdk_env_opts_init(&opts);
+     opts.name = "append_demo";
+     opts.shm_id = 0;
++    opts.core_mask = "0xffffffff";
+     if (spdk_env_init(&opts) < 0) {
+         fprintf(stderr, "Unable to initialize Spdk env\n");
+         return -1;
+diff --git a/main/append_demo_main.cpp b/main/append_demo_main.cpp
+index 02257d1..5759146 100644
+--- a/main/append_demo_main.cpp
++++ b/main/append_demo_main.cpp
+@@ -20,7 +20,7 @@
+ 
+ #define CNT 0x80
+ #define MAX_EVENTS CNT
+-
++#define LOOPS 0x100
+ #if 0
+ int test_FuseIOWoman(int argc, char **argv)
+ {
+@@ -53,6 +53,7 @@ int short_sync_io_test();
+ int check_wr(char * dst, char * src, uint64_t sz);
+ int sync_io_test_loop(int argc, char **argv);
+ int aio_test_loop(int argc, char **argv);
++int sync_multify_files_test(int argc, char **argv);
+ 
+ int demofs_mount(void)
+ {
+@@ -147,7 +148,7 @@ int sync_io_test_loop(int argc, char **argv)
+     LOG(INFO) << " open test" << std::endl;
+     int fd = g_demofs_manager->fs_myopen("dio_test");
+     LOG(INFO) << "demo dio write test" << std::endl;
+-    for (uint64_t i = 0; i < 0x10000; ++i) {
++    for (uint64_t i = 0; i < LOOPS; ++i) {
+         g_demofs_manager->fs_write(fd, i * BUF_SIZE, BUF_SIZE, wbuf); 
+         LOG(INFO) << "demo dio read test" << std::endl;
+         g_demofs_manager->fs_read(fd, i * BUF_SIZE, BUF_SIZE, rbuf); 
+@@ -248,6 +249,71 @@ int aio_test_loop(int argc, char **argv)
+     return 0;
+ }
+ 
++int sync_multify_files_test(int argc, char **argv)
++{
++    /* init spdk device */
++    init(NULL);
++    LOG(INFO) << "First raw wr test";
++    short_sync_io_test();
++    LOG(INFO) << "Second raw wr test";
++    short_sync_io_test();
++
++    char * rbuf = (char *)mem_alloc(BUF_SIZE);
++    char * wbuf = (char *)mem_alloc(BUF_SIZE);
++    memset(rbuf, 0x5a, BUF_SIZE);
++    memset(wbuf, 0xa5, BUF_SIZE);
++
++    LOG(INFO) << " format test" << std::endl;
++    g_demofs_manager->fs_format();
++    LOG(INFO) << " mount test" << std::endl;
++    g_demofs_manager->fs_mount();
++    LOG(INFO) << " open test" << std::endl;
++    int fd = g_demofs_manager->fs_myopen("dio_test_1");
++    LOG(INFO) << "demo dio write test1" << std::endl;
++    for (uint64_t i = 0; i < LOOPS; ++i) {
++        g_demofs_manager->fs_write(fd, i * BUF_SIZE, BUF_SIZE, wbuf); 
++        LOG(INFO) << "demo dio read test1" << std::endl;
++        g_demofs_manager->fs_read(fd, i * BUF_SIZE, BUF_SIZE, rbuf); 
++
++        if (check_wr(rbuf, wbuf, BUF_SIZE)) {
++            LOG(ERROR) << "Fail: write and read doesn't match!" << std::endl;
++            break;
++        } else {
++            LOG(INFO) << "Success: write and read do  match!" << std::endl;
++        }
++        memset(rbuf, 0x5a, BUF_SIZE);
++    }
++
++    int fd2 = g_demofs_manager->fs_myopen("dio_test_2");
++    LOG(INFO) << "demo dio write test2" << std::endl;
++    for (uint64_t i = 0; i < LOOPS; ++i) {
++        g_demofs_manager->fs_write(fd2, i * BUF_SIZE, BUF_SIZE, wbuf); 
++        LOG(INFO) << "demo dio read test2" << std::endl;
++        g_demofs_manager->fs_read(fd2, i * BUF_SIZE, BUF_SIZE, rbuf); 
++
++        if (check_wr(rbuf, wbuf, BUF_SIZE)) {
++            LOG(ERROR) << "Fail: write and read doesn't match!" << std::endl;
++            break;
++        } else {
++            LOG(INFO) << "Success: write and read do  match!" << std::endl;
++        }
++        memset(rbuf, 0x5a, BUF_SIZE);
++    }
++
++    LOG(INFO) << " close test1" << std::endl;
++    g_demofs_manager->fs_myclose(fd); 
++    LOG(INFO) << " close test2" << std::endl;
++    g_demofs_manager->fs_myclose(fd2); 
++
++    LOG(INFO) << " basic test done" << std::endl;
++    mem_free(rbuf);
++    mem_free(wbuf);
++    deinit(NULL);
++
++    return 0;
++}
++
+ int main(int argc, char **argv) {
+-    return aio_test_loop(argc, argv);
++    //return aio_test_loop(argc, argv);
++    return sync_multify_files_test(argc, argv);
+ }
